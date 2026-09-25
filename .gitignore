@@ -1,0 +1,10 @@
+dist/
+.build/
+*.pfx
+*.p12
+*.cer
+*.msix
+*.appx
+installation.json
+install-result.json
+original-file-hashes.json
