@@ -1,27 +1,22 @@
 #requires -Version 5.1
 [CmdletBinding()]
 param(
-    [string]$SevenZipPath = (Join-Path $env:ProgramFiles '7-Zip'),
+    [string]$SevenZipPath,
     [string]$SdkBinPath,
     [string]$OutputDirectory = (Join-Path $PSScriptRoot 'dist')
 )
 
 $ErrorActionPreference = 'Stop'
-if ([Environment]::OSVersion.Version.Build -lt 22000 -or -not [Environment]::Is64BitProcess) {
-    throw 'Use 64-bit PowerShell on Windows 11.'
-}
+. (Join-Path $PSScriptRoot 'lib\Common.ps1')
+Assert-MenuEnvironment
+$SevenZipPath = Resolve-SevenZipPath $SevenZipPath
+$compatibility = Test-SevenZipCompatibility $SevenZipPath
 $sevenZipExe = Join-Path $SevenZipPath '7zFM.exe'
-$sevenZipDll = Join-Path $SevenZipPath '7-zip.dll'
-foreach ($requiredFile in @($sevenZipExe, $sevenZipDll)) {
-    if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) { throw "Missing: $requiredFile" }
-}
-$peBytes = [IO.File]::ReadAllBytes($sevenZipDll)
-$peOffset = [BitConverter]::ToInt32($peBytes, 0x3c)
-if ([BitConverter]::ToUInt16($peBytes, $peOffset + 4) -ne 0x8664) {
-    throw 'This manifest supports the x64 edition of 7-Zip only.'
-}
+Write-Output "Compatible 7-Zip $($compatibility.Version): $SevenZipPath"
 if (-not $SdkBinPath) {
-    $sdkRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+    $sdkRegistration = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots' -ErrorAction SilentlyContinue
+    $sdkRoot = if ($sdkRegistration.KitsRoot10) { Join-Path $sdkRegistration.KitsRoot10 'bin' }
+        else { Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin' }
     $sdk = Get-ChildItem -LiteralPath $sdkRoot -Directory -ErrorAction SilentlyContinue |
         Where-Object {
             $_.Name -match '^10\.0\.\d+\.\d+$' -and
@@ -36,12 +31,12 @@ $signTool = Join-Path $SdkBinPath 'signtool.exe'
 foreach ($tool in @($makeAppx, $signTool)) {
     if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) { throw "SDK tool not found: $tool" }
 }
-$OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
+$OutputDirectory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDirectory)
 if (Test-Path -LiteralPath (Join-Path $OutputDirectory 'installation.json')) {
     throw 'This directory contains installation state. Uninstall first or use a different -OutputDirectory.'
 }
-if (Test-Path -LiteralPath (Join-Path $OutputDirectory 'PackageInfo.json')) {
-    throw 'Build output already exists. Use a new output directory to preserve its signing identity.'
+if ((Test-Path -LiteralPath $OutputDirectory) -and @(Get-ChildItem -LiteralPath $OutputDirectory -Force).Count) {
+    throw 'Build output must be empty. Choose a new output directory so stale payloads and signing identities cannot be reused.'
 }
 $payload = Join-Path $OutputDirectory 'payload'
 New-Item -ItemType Directory -Path (Join-Path $payload 'Assets') -Force | Out-Null
@@ -74,6 +69,7 @@ try {
     CertificateFile = 'LocalSevenZipMenu.cer'
     CertificateThumbprint = $thumbprint
     PackageSha256 = (Get-FileHash -LiteralPath $packagePath -Algorithm SHA256).Hash
+    TestedSevenZipVersion = $compatibility.Version
 } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDirectory 'PackageInfo.json') -Encoding utf8
 Write-Output "Built locally signed registration package in: $OutputDirectory"
 Write-Output 'No certificate was trusted and no menu was installed by this build.'

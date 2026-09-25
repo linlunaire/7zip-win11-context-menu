@@ -1,23 +1,19 @@
 #requires -Version 5.1
-#requires -RunAsAdministrator
 [CmdletBinding()]
-param([string]$PackageDirectory = (Join-Path $PSScriptRoot 'dist'))
+param(
+    [string]$StatePath = (Join-Path $env:LOCALAPPDATA 'SevenZipModernMenu\installation.json'),
+    [string]$PackageDirectory
+)
 
 $ErrorActionPreference = 'Stop'
-$stateFile = Join-Path $PackageDirectory 'installation.json'
-$state = Get-Content -LiteralPath $stateFile -Raw | ConvertFrom-Json
-if ($state.PackageName -ne 'Local.SevenZipModernMenu') { throw 'Unexpected package identity.' }
-if ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value -ne $state.UserSid) {
-    throw 'Use the Windows account that installed this menu.'
+. (Join-Path $PSScriptRoot 'lib\Common.ps1')
+Assert-MenuEnvironment -Administrator
+if ($PackageDirectory) {
+    if ($PSBoundParameters.ContainsKey('StatePath')) { throw 'Specify -StatePath or legacy -PackageDirectory, not both.' }
+    $StatePath = Join-Path $PackageDirectory 'installation.json'
 }
-$installed = Get-AppxPackage -Name $state.PackageName
-if ($installed) {
-    if ($installed.PackageFullName -ne $state.PackageFullName) { throw 'The registered package differs from the saved installation.' }
-    $installed | Remove-AppxPackage -ErrorAction Stop
-}
-$trustPath = "Cert:\LocalMachine\TrustedPeople\$($state.CertificateThumbprint)"
-if ($state.CertificateAdded -and (Test-Path -LiteralPath $trustPath)) {
-    Remove-Item -LiteralPath $trustPath
-}
-Remove-Item -LiteralPath $stateFile
-Write-Output 'Removed this menu registration and its added certificate. Original 7-Zip files were not changed.'
+if (-not (Test-Path -LiteralPath $StatePath)) { throw 'Installation state was not found. No package or certificate was removed.' }
+$state = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
+Remove-MenuRegistration $state $StatePath
+Update-MenuShell
+Write-Output 'Menu unregistration finished. Original 7-Zip files were not changed.'
