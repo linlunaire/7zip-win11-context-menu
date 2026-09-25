@@ -159,6 +159,18 @@ Describe 'Registration recovery and certificate ownership' {
 }
 
 Describe 'Path discovery and PE validation' {
+    It 'skips an unmounted drive before trying the next installation' {
+        $valid = Join-Path $TestDrive '7-Zip fallback'
+        New-Item -ItemType Directory -Path $valid -Force | Out-Null
+        foreach ($file in @('7-zip.dll','7zFM.exe','7zG.exe')) { Set-Content -LiteralPath (Join-Path $valid $file) -Value 'test fixture' }
+        Mock Get-SevenZipCandidates { @('SevenZipMissingDrive:\7-Zip', (Join-Path $TestDrive '7-Zip fallback')) }
+        $previousPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Stop'
+            (Resolve-SevenZipPath) | Should Be $valid
+        } finally { $ErrorActionPreference = $previousPreference }
+    }
+
     It 'saves relative state paths under the PowerShell working directory' {
         Push-Location $TestDrive
         try {
@@ -188,5 +200,41 @@ Describe 'Path discovery and PE validation' {
         $bytes[0] = 0x4d; $bytes[1] = 0x5a; $bytes[0x3c] = 0x7f
         [IO.File]::WriteAllBytes($invalid, $bytes)
         { Get-PeMachine $invalid } | Should Throw
+    }
+}
+
+Describe 'Read-only diagnostics and recovery state' {
+    BeforeEach {
+        $script:checkPath = Join-Path (Split-Path $PSScriptRoot -Parent) 'Check.ps1'
+        $script:checkStatePath = Join-Path $TestDrive 'check-state.json'
+        $script:checkState = [pscustomobject]@{
+            PackageName = 'Local.SevenZipModernMenu'
+            PackageFullName = 'Local.SevenZipModernMenu_1.0.0.0_x64__test'
+            UserSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+            CertificateThumbprint = ('A' * 40)
+            CertificateAdded = $true
+            ExternalLocation = 'C:\Program Files\7-Zip'
+            Phase = 'Installed'
+        }
+        Mock Assert-MenuEnvironment {}
+        Mock Resolve-SevenZipPath { 'C:\Program Files\7-Zip' }
+        Mock Test-SevenZipCompatibility { [pscustomobject]@{Version = '25.01'; DllSha256 = 'test'} }
+        Mock Write-Warning {}
+    }
+
+    It 'rejects diagnostics against a package that differs from the saved installation' {
+        & $script:originalSaveState $script:checkState $script:checkStatePath
+        Mock Get-AppxPackage { [pscustomobject]@{PackageFullName = 'Local.SevenZipModernMenu_2.0.0.0_x64__test'; Status = 'Ok'} }
+        { & $script:checkPath -StatePath $script:checkStatePath } | Should Throw 'Registered package differs from saved installation.'
+    }
+
+    It 'reports an unfinished installation even when no package is registered' {
+        $script:checkState.Phase = 'Installing'
+        & $script:originalSaveState $script:checkState $script:checkStatePath
+        Mock Get-AppxPackage { $null }
+        $report = & $script:checkPath -StatePath $script:checkStatePath
+        $report.InstallationPhase | Should Be 'Installing'
+        $report.PackageRegistered | Should Be $false
+        Assert-MockCalled Write-Warning -Times 1 -Exactly -Scope It -ParameterFilter { $Message -like 'Saved recovery state*' }
     }
 }

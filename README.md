@@ -10,6 +10,8 @@
 - 安装前保存恢复记录；失败时回滚，卸载不依赖构建目录。
 - 不需要其他压缩软件或开发者模式。
 
+日常运行只加载已有的 7-Zip 菜单 DLL，无新增常驻进程、服务或另一份压缩引擎。PowerShell 与诊断 C# 代码只在维护时运行；本地验证的 `1.0.1.0` 注册包为 4,382 字节。
+
 ## 环境要求
 
 - Windows 11 x64；不支持 ARM64、32 位系统或 32 位 PowerShell。
@@ -22,7 +24,7 @@
 
 ## 检查和构建
 
-在项目根目录先做只读检查：
+在**非管理员** PowerShell 窗口中进入项目根目录，先做只读检查：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Check.ps1
@@ -30,13 +32,15 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Check.ps1
 
 尚未安装本项目时，`PackageRegistered = False` 是正常结果。脚本直接加载选定目录的 DLL 验证接口；已注册时还会检查包状态、通过包激活 COM，并核对菜单返回的 DLL 路径。它不能代替在资源管理器中实际点击菜单。
 
+`PackageVersion` 显示注册包版本，`InstallationPhase` 显示保存的安装阶段。记录与已注册包不一致时会报错；安装未完成或只剩恢复记录时会提示清理。检查须与普通资源管理器处于相同权限环境，脚本会拒绝在管理员窗口中执行。
+
 构建注册包：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Build.ps1
 ```
 
-路径查找依次使用 `HKLM\SOFTWARE\7-Zip` 的 `Path64`、`Path` 和 `%ProgramFiles%\7-Zip`，跳过缺少必要文件的目录。不会自动从 HKCU 或 App Paths 加载 DLL。显式指定的目录无效时会报错，不会悄悄使用另一份安装。
+路径查找依次使用 `HKLM\SOFTWARE\7-Zip` 的 `Path64`、`Path` 和 `%ProgramFiles%\7-Zip`，跳过已卸载盘符或缺少必要文件的目录。不会自动从 HKCU 或 App Paths 加载 DLL。显式指定的目录无效时会报错，不会悄悄使用另一份安装。
 
 自定义路径：
 
@@ -74,7 +78,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install.ps1
 
 安装成功后可以删除构建输出，但请保留项目脚本和恢复记录。记录包含本机账户 SID，不应上传。可用 `-StatePath` 自定义位置，后续检查和卸载传入同一路径。
 
-安装后运行 `Check.ps1`，再右键文件和文件夹验证菜单及压缩、解压操作。脚本会通知资源管理器刷新；若尚未生效，保存工作后注销并重新登录。
+安装后在普通、非管理员 PowerShell 窗口中运行 `Check.ps1`，再右键文件和文件夹验证菜单及压缩、解压操作。脚本会通知资源管理器刷新；若尚未生效，保存工作后注销并重新登录。
 
 ## 卸载与升级
 
@@ -109,7 +113,7 @@ Windows 的 `IExplorerCommand` 菜单不支持子命令继续嵌套子命令。7
 - 7z 归档完整性检查通过，解压后的 SHA-256 与原文件一致。
 - 原有 `7-zip.dll`、`7zFM.exe`、`7zG.exe` 哈希未改变。
 
-本次脚本优化另行验证构建与签名、兼容性检查和 14 项自动化测试：包括部分安装后失败、首次/最终状态写入失败、回滚失败后恢复、证书共享、删除构建目录后的卸载、路径发现和无效 PE 文件。包与证书修改通过 mock 模拟，恢复记录使用真实临时文件。
+本次脚本优化另行验证构建与签名、兼容性检查和 17 项自动化测试：包括部分安装后失败、首次/最终状态写入失败、回滚失败后恢复、证书共享、删除构建目录后的卸载、缺失盘符回退、无效 PE 文件，以及诊断对异常安装记录的处理。包与证书修改通过 mock 模拟，恢复记录使用真实临时文件。
 
 测试使用 Windows PowerShell 5.1 + Pester 3.4.0：
 
@@ -117,7 +121,15 @@ Windows 的 `IExplorerCommand` 菜单不支持子命令继续嵌套子命令。7
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Import-Module Pester -RequiredVersion 3.4.0; Invoke-Pester -Script .\tests\Lifecycle.Tests.ps1 -EnableExit"
 ```
 
-优化后的安装、卸载流程**尚未在干净系统上进行完整实装回归**。实际检查现有注册成功，不等于已经完成这一项验证。
+`1.0.1.0` 还在上述本机环境完成真实回归：
+
+- Windows PowerShell 5.1 默认构建和安装命令通过；默认路径在脚本主体中解析，兼容 5.1 的参数求值行为。
+- 从初始注册升级，执行安装、重复安装、卸载、重装，最终保留新版。
+- 重复安装不改写记录；卸载实际移除了包、本次新增的证书和恢复记录；重装后记录恢复为 `Installed`。
+- 普通用户进程中包 COM 激活通过；经真实菜单命令完成多文件压缩、中文及空格文件名解压，归档完整性和解压文件哈希检查通过。
+- 7-Zip 原始程序文件哈希保持一致；临时签名私钥已删除。
+
+这是已有 Windows 安装上的实装回归，尚未在全新 Windows 虚拟机上验证。本轮未重新通过界面点击确认菜单外观。
 
 ## 参考项目
 

@@ -10,7 +10,7 @@
   IgnorableNamespaces="uap uap10 com desktop4 desktop5 rescap">
   <Identity Name="Local.SevenZipModernMenu"
     Publisher="CN=Local SevenZip Menu"
-    Version="1.0.0.0" ProcessorArchitecture="x64" />
+    Version="1.0.1.0" ProcessorArchitecture="x64" />
   <Properties>
     <DisplayName>7-Zip Modern Context Menu</DisplayName>
     <PublisherDisplayName>Local configuration</PublisherDisplayName>

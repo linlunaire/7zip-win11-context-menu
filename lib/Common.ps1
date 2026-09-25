@@ -1,14 +1,18 @@
 function Assert-MenuEnvironment {
-    param([switch]$Administrator)
+    param([switch]$Administrator, [switch]$NonElevated)
     $build = Get-ItemPropertyValue 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -Name CurrentBuildNumber -ErrorAction Stop
     if ([int]$build -lt 22000 -or -not [Environment]::Is64BitProcess -or
         $env:PROCESSOR_ARCHITECTURE -ne 'AMD64' -or $env:PROCESSOR_ARCHITEW6432 -eq 'ARM64') {
         throw 'Use 64-bit PowerShell on Windows 11 x64. ARM64 and 32-bit processes are not supported.'
     }
-    if ($Administrator) {
+    if ($Administrator -or $NonElevated) {
         $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
-        if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        $elevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+        if ($Administrator -and -not $elevated) {
             throw 'Open PowerShell as administrator using the same Windows account, then run this script again.'
+        }
+        if ($NonElevated -and $elevated) {
+            throw 'Run Check.ps1 in a normal, non-administrator PowerShell window to match the Explorer user context.'
         }
     }
 }
@@ -31,9 +35,11 @@ function Resolve-SevenZipPath {
     $explicit = -not [string]::IsNullOrWhiteSpace($Path)
     $candidates = if ($explicit) { @($Path) } else { @(Get-SevenZipCandidates | Select-Object -Unique) }
     foreach ($candidate in $candidates) {
-        $complete = $true
-        foreach ($file in @('7-zip.dll', '7zFM.exe', '7zG.exe')) {
-            if (-not (Test-Path -LiteralPath (Join-Path $candidate $file) -PathType Leaf)) { $complete = $false }
+        $complete = Test-Path -LiteralPath $candidate -PathType Container
+        if ($complete) {
+            foreach ($file in @('7-zip.dll', '7zFM.exe', '7zG.exe')) {
+                if (-not (Test-Path -LiteralPath (Join-Path $candidate $file) -PathType Leaf)) { $complete = $false }
+            }
         }
         if ($complete) {
             $resolved = (Resolve-Path -LiteralPath $candidate).Path
@@ -104,17 +110,24 @@ function Assert-MenuState {
     }
 }
 
+function Assert-MenuPackage {
+    param($State, $Package)
+    if ($Package) {
+        if ($State.PackageFullName) {
+            if ($Package.PackageFullName -ne $State.PackageFullName) { throw 'Registered package differs from saved installation.' }
+        } elseif ([string]$Package.Version -ne $State.PackageVersion -or
+            $Package.Publisher -ne $State.Publisher -or [string]$Package.Architecture -ne 'X64') {
+            throw 'Pending installation state does not match the registered package.'
+        }
+    }
+}
+
 function Remove-MenuRegistration {
     param($State, [string]$StatePath)
     Assert-MenuState $State
     $installed = Get-AppxPackage -Name $State.PackageName -ErrorAction Stop
+    Assert-MenuPackage $State $installed
     if ($installed) {
-        if ($State.PackageFullName) {
-            if ($installed.PackageFullName -ne $State.PackageFullName) { throw 'Registered package differs from saved installation.' }
-        } elseif ([string]$installed.Version -ne $State.PackageVersion -or
-            $installed.Publisher -ne $State.Publisher -or [string]$installed.Architecture -ne 'X64') {
-            throw 'Pending installation state does not match the registered package.'
-        }
         Remove-AppxPackage -Package $installed.PackageFullName -ErrorAction Stop
         if (Get-AppxPackage -Name $State.PackageName -ErrorAction Stop) { throw 'Package is still registered. Recovery state was retained.' }
     }

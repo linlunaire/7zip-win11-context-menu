@@ -2,11 +2,12 @@
 [CmdletBinding()]
 param(
     [string]$SevenZipPath,
-    [string]$PackageDirectory = (Join-Path $PSScriptRoot 'dist'),
+    [string]$PackageDirectory,
     [string]$StatePath = (Join-Path $env:LOCALAPPDATA 'SevenZipModernMenu\installation.json')
 )
 
 $ErrorActionPreference = 'Stop'
+if (-not $PackageDirectory) { $PackageDirectory = Join-Path $PSScriptRoot 'dist' }
 . (Join-Path $PSScriptRoot 'lib\Common.ps1')
 Assert-MenuEnvironment -Administrator
 $PackageDirectory = (Resolve-Path -LiteralPath $PackageDirectory -ErrorAction Stop).Path
@@ -74,4 +75,4 @@ $state = [pscustomobject][ordered]@{
 }
 Invoke-MenuRegistration $state $StatePath $packagePath $certificatePath
 Update-MenuShell
-Write-Output "Registered 7-Zip. Recovery state: $StatePath. Run Check.ps1, then check the menu in Explorer."
+Write-Output "Registered 7-Zip. Recovery state: $StatePath. Run Check.ps1 from a non-administrator PowerShell window, then check the menu in Explorer."

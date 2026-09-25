@@ -3,10 +3,11 @@
 param(
     [string]$SevenZipPath,
     [string]$SdkBinPath,
-    [string]$OutputDirectory = (Join-Path $PSScriptRoot 'dist')
+    [string]$OutputDirectory
 )
 
 $ErrorActionPreference = 'Stop'
+if (-not $OutputDirectory) { $OutputDirectory = Join-Path $PSScriptRoot 'dist' }
 . (Join-Path $PSScriptRoot 'lib\Common.ps1')
 Assert-MenuEnvironment
 $SevenZipPath = Resolve-SevenZipPath $SevenZipPath

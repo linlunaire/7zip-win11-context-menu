@@ -7,7 +7,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib\Common.ps1')
-Assert-MenuEnvironment
+Assert-MenuEnvironment -NonElevated
 $state = $null
 if (Test-Path -LiteralPath $StatePath) {
     $state = Get-Content -LiteralPath $StatePath -Raw | ConvertFrom-Json
@@ -17,6 +17,12 @@ if (Test-Path -LiteralPath $StatePath) {
 $SevenZipPath = Resolve-SevenZipPath $SevenZipPath
 $compatibility = Test-SevenZipCompatibility $SevenZipPath
 $package = Get-AppxPackage -Name 'Local.SevenZipModernMenu' -ErrorAction Stop
+if ($state) {
+    Assert-MenuPackage $state $package
+    if ($state.Phase -eq 'Installing' -or -not $package) {
+        Write-Warning "Saved recovery state needs cleanup. Run Uninstall.ps1 with -StatePath '$StatePath', then install again."
+    }
+}
 $activated = $false
 $registeredDll = $null
 if ($package) {
@@ -34,6 +40,8 @@ if ($package) {
     SevenZipVersion = $compatibility.Version
     IExplorerCommandSupported = $true
     PackageRegistered = [bool]$package
+    PackageVersion = if ($package) { [string]$package.Version } else { $null }
+    InstallationPhase = if ($state) { $state.Phase } else { $null }
     PackagedComActivation = $activated
     RegisteredDll = $registeredDll
     RecoveryStateFound = [bool]$state
