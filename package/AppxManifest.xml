@@ -10,11 +10,12 @@
   IgnorableNamespaces="uap uap10 com desktop4 desktop5 rescap">
   <Identity Name="Local.SevenZipModernMenu"
     Publisher="CN=Local SevenZip Menu"
-    Version="1.1.0.0" ProcessorArchitecture="x64" />
+    Version="1.0.1.0" ProcessorArchitecture="x64" />
   <Properties>
     <DisplayName>7-Zip Modern Context Menu</DisplayName>
     <PublisherDisplayName>Local configuration</PublisherDisplayName>
     <Logo>Assets\Logo.png</Logo>
+    <uap10:AllowExternalContent>true</uap10:AllowExternalContent>
   </Properties>
   <Resources>
     <Resource Language="zh-CN" />
@@ -24,27 +25,27 @@
     <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.22000.0" MaxVersionTested="10.0.26200.0" />
   </Dependencies>
   <Applications>
-    <Application Id="SevenZip" Executable="SevenZipLauncher.exe"
+    <Application Id="SevenZip" Executable="7zFM.exe"
       uap10:TrustLevel="mediumIL" uap10:RuntimeBehavior="win32App">
       <uap:VisualElements AppListEntry="none" DisplayName="7-Zip"
-        Description="Modern context menu adapter for the existing 7-Zip installation"
+        Description="Modern context menu registration for the existing 7-Zip installation"
         BackgroundColor="transparent" Square150x150Logo="Assets\Logo.png" Square44x44Logo="Assets\Logo.png" />
       <Extensions>
         <com:Extension Category="windows.comServer">
           <com:ComServer>
             <com:SurrogateServer DisplayName="7-Zip Shell Extension">
-              <com:Class Id="a51841e4-acd0-4a8b-b1ad-5488da4dbee6"
-                Path="SevenZipMenu.dll" ThreadingModel="STA" />
+              <com:Class Id="23170F69-40C1-278A-1000-000100020000"
+                Path="7-zip.dll" ThreadingModel="STA" />
             </com:SurrogateServer>
           </com:ComServer>
         </com:Extension>
         <desktop4:Extension Category="windows.fileExplorerContextMenus">
           <desktop4:FileExplorerContextMenus>
             <desktop5:ItemType Type="*">
-              <desktop5:Verb Id="SevenZip" Clsid="a51841e4-acd0-4a8b-b1ad-5488da4dbee6" />
+              <desktop5:Verb Id="SevenZip" Clsid="23170F69-40C1-278A-1000-000100020000" />
             </desktop5:ItemType>
             <desktop5:ItemType Type="Directory">
-              <desktop5:Verb Id="SevenZip" Clsid="a51841e4-acd0-4a8b-b1ad-5488da4dbee6" />
+              <desktop5:Verb Id="SevenZip" Clsid="23170F69-40C1-278A-1000-000100020000" />
             </desktop5:ItemType>
           </desktop4:FileExplorerContextMenus>
         </desktop4:Extension>

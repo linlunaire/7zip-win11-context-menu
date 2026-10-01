@@ -27,13 +27,7 @@ $activated = $false
 $registeredDll = $null
 if ($package) {
     if ($package.Status -ne 'Ok') { throw "Package status: $($package.Status)" }
-    # Read the installed manifest so diagnostics also work for the older registration-only package.
-    $installedManifest = Get-AppxPackageManifest -Package $package.PackageFullName -ErrorAction Stop
-    $classId = [string]$installedManifest.Package.Applications.Application.Extensions.Extension.ComServer.SurrogateServer.Class.Id
-    if ($classId -notin @('23170F69-40C1-278A-1000-000100020000','a51841e4-acd0-4a8b-b1ad-5488da4dbee6')) {
-        throw 'Unexpected packaged COM class.'
-    }
-    $icon = [SevenZipModernMenu.Native]::CheckPackagedActivation($classId)
+    $icon = [SevenZipModernMenu.Native]::CheckPackagedActivation()
     if ([string]::IsNullOrWhiteSpace($icon)) { throw 'The registered command did not report its DLL icon path.' }
     $registeredDll = ($icon -replace ',-?\d+$','').Trim('"')
     if ($registeredDll -ne (Join-Path $SevenZipPath '7-zip.dll')) {
@@ -49,9 +43,8 @@ if ($package) {
     PackageVersion = if ($package) { [string]$package.Version } else { $null }
     InstallationPhase = if ($state) { $state.Phase } else { $null }
     PackagedComActivation = $activated
-    RegisteredDll = $registeredDll # Original 7-Zip backend, as in earlier diagnostic versions.
-    MenuClassId = if ($package) { $classId } else { $null }
+    RegisteredDll = $registeredDll
     RecoveryStateFound = [bool]$state
     DllChangedSinceInstall = [bool]($state -and $state.DllSha256 -and $state.DllSha256 -ne $compatibility.DllSha256)
 }
-Write-Warning 'This checks interfaces/registration, not visible Explorer menu behavior or right-click latency. Version 1.1.0 flattens CRC SHA commands into the 7-Zip submenu.'
+Write-Warning 'This checks interfaces/registration, not visible Explorer menu behavior. Nested submenus (such as CRC SHA) are limited by Explorer; use Show more options for those commands.'

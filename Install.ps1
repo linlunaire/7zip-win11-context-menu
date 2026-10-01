@@ -16,9 +16,6 @@ if ($info.PackageName -ne 'Local.SevenZipModernMenu' -or $info.CertificateThumbp
     throw 'Unexpected package metadata.'
 }
 $SevenZipPath = Resolve-SevenZipPath $SevenZipPath
-if ($info.SevenZipPath -and $info.SevenZipPath -ne $SevenZipPath) {
-    throw "This adapter was built for '$($info.SevenZipPath)'. Rebuild for the selected 7-Zip path."
-}
 $compatibility = Test-SevenZipCompatibility $SevenZipPath
 $packagePath = Join-Path $PackageDirectory 'SevenZipModernMenu.msix'
 if ((Get-FileHash -LiteralPath $packagePath -Algorithm SHA256).Hash -ne $info.PackageSha256) {
@@ -72,8 +69,6 @@ $state = [pscustomobject][ordered]@{
     ExternalLocation = $SevenZipPath
     SevenZipVersion = $compatibility.Version
     DllSha256 = $compatibility.DllSha256
-    AdapterClassId = $info.AdapterClassId
-    PackagedAdapter = [bool]$info.PackagedAdapter
     CertificateThumbprint = $info.CertificateThumbprint
     CertificateAdded = -not (Test-Path -LiteralPath $trustPath)
     Phase = 'Installing'

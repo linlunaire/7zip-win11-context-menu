@@ -1,4 +1,0 @@
-LIBRARY SevenZipMenu
-EXPORTS
-    DllGetClassObject PRIVATE
-    DllCanUnloadNow PRIVATE

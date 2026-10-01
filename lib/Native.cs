@@ -52,9 +52,9 @@ namespace SevenZipModernMenu
             }
         }
 
-        public static string CheckPackagedActivation(string classId)
+        public static string CheckPackagedActivation()
         {
-            Guid clsid = new Guid(classId);
+            Guid clsid = new Guid("23170F69-40C1-278A-1000-000100020000");
             Guid iid = new Guid("A08CE4D0-FA25-44AB-B57C-C7B1C323E0B9");
             IntPtr command;
             Marshal.ThrowExceptionForHR(CoCreateInstance(ref clsid, IntPtr.Zero, 4, ref iid, out command));
