@@ -2,7 +2,7 @@
 
 让现有 7-Zip 直接出现在 Windows 11 新版右键菜单中。
 
-这个项目给已有的 7-Zip 菜单扩展补充一个 Sparse Package（稀疏应用身份包），登记 `IExplorerCommand` 和 `windows.fileExplorerContextMenus`。压缩和解压仍由原来的 7-Zip 执行。
+这个项目使用小型原生适配层和 MSIX，登记 `IExplorerCommand` 与 `windows.fileExplorerContextMenus`。菜单命令、压缩、解压和校验仍由原来的 7-Zip 执行。
 
 - 保留 Windows 11 新版右键菜单，文件和文件夹的首层菜单显示 **7-Zip**。
 - 自动查找本机 7-Zip，并检查 x64 架构和 DLL 的菜单接口。
@@ -10,17 +10,19 @@
 - 安装前保存恢复记录；失败时回滚，卸载不依赖构建目录。
 - 不需要其他压缩软件或开发者模式。
 
-日常运行只加载已有的 7-Zip 菜单 DLL，无新增常驻进程、服务或另一份压缩引擎。PowerShell 与诊断 C# 代码只在维护时运行；本地验证的 `1.0.1.0` 注册包为 4,382 字节。
+`1.1.0.0` 增加原生适配层，顶层菜单使用静态标题，展开 7-Zip 子菜单时才加载原版 DLL 并读取所选文件。CRC/SHA 子命令展平为 `CRC SHA / SHA-256` 等条目，避免空白的嵌套子菜单。
+
+没有新增常驻进程、服务或压缩引擎。适配层使用静态 C++ 运行库，运行时不需要 .NET 或另装 VC++ 运行库；PowerShell 与 C# 测试代码只在维护时运行。MSIX 还包含一个仅用于应用激活的启动入口，打开原版 7-Zip 文件管理器后退出，右键菜单不启动它。
 
 ## 环境要求
 
 - Windows 11 x64；不支持 ARM64、32 位系统或 32 位 PowerShell。
 - 已安装 x64 版 7-Zip，且 DLL 实现本项目使用的菜单接口。
 - 64 位 Windows PowerShell 5.1 或 PowerShell 7。
-- 构建需要 Windows SDK 中的 `makeappx.exe` 和 `signtool.exe`。
+- 构建需要 Visual Studio Build Tools 的 x64 C++ 工具链，以及 Windows SDK 的头文件、库、`makeappx.exe` 和 `signtool.exe`。
 - 安装、卸载需要**同一 Windows 账户**的管理员权限。
 
-已验证环境：Windows 11 25H2（26200.9457）、7-Zip 25.01 x64。其他版本需运行兼容性检查，不能仅凭版本号保证支持。
+测试环境：Windows 11 25H2（26200.9457）、7-Zip 25.01 x64。`1.1.0.0` 已通过接口与文件操作回归，签名、安装和资源管理器界面验证仍待完成；不能沿用旧版实装结果作为新版证明。
 
 ## 检查和构建
 
@@ -48,7 +50,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Build.ps1
 .\Build.ps1 -SevenZipPath 'D:\Apps\7-Zip' -SdkBinPath 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64' -OutputDirectory '.\dist-custom'
 ```
 
-脚本自动查找 SDK，默认输出到 `dist`。输出目录必须为空或不存在；再次构建请指定新目录，避免混入旧文件。构建只生成文件和一次性签名，不安装菜单或信任证书。
+脚本自动查找 MSVC 与 SDK，默认输出到 `dist`。输出目录必须为空或不存在；再次构建请指定新目录，避免混入旧文件。适配层记录构建时的 7-Zip 绝对路径，安装时会核对；更换 7-Zip 目录需要重新构建。构建只生成文件和一次性签名，不安装菜单或信任证书。
 
 每次构建生成新的本地代码签名证书。私钥不可导出，签名结束后删除；`LocalSevenZipMenu.cer` 只包含公钥。
 
@@ -82,6 +84,15 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install.ps1
 
 ## 卸载与升级
 
+从 `1.0.1.0` 升级时先保留旧包，构建并验证新版，全部成功后再卸载旧版并安装新版。例如将新包输出到 `dist\1.1.0`，安装时传入同一目录：
+
+```powershell
+./Build.ps1 -OutputDirectory './dist/1.1.0'
+./tests/Test-NativeMenu.ps1 -AdapterDll './dist/1.1.0/payload/SevenZipMenu.dll'
+```
+
+上述两步成功后，以同一账户的管理员身份运行 `Uninstall.ps1`，再运行 `Install.ps1 -PackageDirectory './dist/1.1.0'`。签名或测试失败时保留原安装；不要用未签名的中间包替换它。
+
 以安装时同一账户的管理员身份运行：
 
 ```powershell
@@ -98,13 +109,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Uninstall.ps1
 
 ## 功能边界
 
-本项目复用 7-Zip 原有菜单与设置，没有自行重写命令。`lib/Native.cs` 仅用于检查和刷新通知，不是另一个注册到系统的菜单扩展。
+`native/SevenZipMenu.cpp` 只适配菜单结构与加载时机，命令执行及设置由本机 7-Zip 提供。`lib/Native.cs` 仅用于检查和刷新通知。
 
-Windows 的 `IExplorerCommand` 菜单不支持子命令继续嵌套子命令。7-Zip 的 **CRC SHA 等多层子菜单可能无法完整呈现**；这些操作请从“显示更多选项”进入经典菜单。本项目不承诺与经典菜单的全部项目完全一致。要展开或重排这些项目，需要另外实现菜单扩展。[微软接口说明](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-iexplorercommand-enumsubcommands)
+Windows 的 `IExplorerCommand` 菜单不支持子命令继续嵌套子命令。适配层递归展平原 DLL 的分组，在标题中保留组名，并转发原命令；经典菜单仍可使用。[微软接口说明](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-iexplorercommand-enumsubcommands)
+
+延后读取文件可以移除顶层显示路径上的文件查询，展开子菜单时仍须读取文件。Windows COM 首次启动、资源管理器以及其他扩展造成的等待需要单独测量，不能仅凭接口耗时承诺所有右键卡顿消失。
 
 注册范围是文件和文件夹；尚未增加磁盘或文件夹空白处菜单。
 
 ## 验证记录
+
+`1.1.0.0` 的结果及可复现命令见 [新版验证记录](docs/validation-1.1.0.md)。以下实装记录属于 `1.0.1.0`。
 
 原始注册方案已完成：
 

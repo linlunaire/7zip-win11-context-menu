@@ -6,8 +6,8 @@
 
 | 项目与源码快照 | 核查结果 | 本项目的处理 |
 | --- | --- | --- |
-| [Wings-Fantasy/7-Zip_Context_menu_plugin](https://github.com/Wings-Fantasy/7-Zip_Context_menu_plugin/tree/1a9967e28f1b11cdcbe75a2f7b76aa553cde12ce) | 自行实现菜单扩展，读取 7-Zip 设置并构造命令；说明了三级菜单展平的需求。 | 保留原 DLL 提供的菜单和设置，明确嵌套子菜单限制。没有为展平重写菜单层。 |
-| [2xRon/7zipExplorerExtension](https://github.com/2xRon/7zipExplorerExtension/tree/e66805c04e191c2d0a1ec05aa6c884460d8f3929) | 当前路径发现只读 HKLM，优先 Path64、Path；安装脚本把自有 DLL 和启动程序放入签名 MSIX。 | 自动发现采用 HKLM 与标准目录，保留显式路径参数；包仍引用本地原版 DLL。 |
+| [Wings-Fantasy/7-Zip_Context_menu_plugin](https://github.com/Wings-Fantasy/7-Zip_Context_menu_plugin/tree/1a9967e28f1b11cdcbe75a2f7b76aa553cde12ce) | 自行实现菜单扩展，读取 7-Zip 设置并构造命令；说明了三级菜单展平的需求。 | 采纳静态顶层标题、延后构造和菜单展平思路；通过原 DLL 枚举、执行命令，保留原版设置。 |
+| [2xRon/7zipExplorerExtension](https://github.com/2xRon/7zipExplorerExtension/tree/e66805c04e191c2d0a1ec05aa6c884460d8f3929) | 当前路径发现只读 HKLM，优先 Path64、Path；安装脚本把自有 DLL 和启动程序放入签名 MSIX。 | 自动发现采用 HKLM 与标准目录；1.1.0 将自有适配层与激活入口放入 MSIX，后端仍加载本地原版 DLL。 |
 | [Nowaterisenough/7ZipContext](https://github.com/Nowaterisenough/7ZipContext/tree/08c7071587df8dc65f363a21252866b9bf4204fd) | 自有 C++ 菜单实现，并封装 7-Zip 核心接口。 | 将它视为自建菜单/归档调用层的另一条路线；当前不引入另一套命令逻辑。 |
 | [spakov/GenericShellEx](https://github.com/spakov/GenericShellEx/tree/995388ab92ee17e700e857403778e10e7f1ee644) | 安装前核查包兼容条件；提醒 .NET Framework 的 OSVersion 可能不准确；证书卸载使用已知指纹。 | 从系统注册信息读取 Windows 构建号；持久保存本次证书指纹与所有权，保留失败恢复依据。 |
 | [M2Team/NanaZip](https://github.com/M2Team/NanaZip/tree/5a0be02f266ab87a5328face8d3e35e9832d292b) | 清单使用文件/目录/磁盘的新版菜单注册，以及 STA 的 COM SurrogateServer。 | 交叉核对本项目文件/目录与 STA 注册方式；磁盘和空白区域仍待单独验证。 |
@@ -34,10 +34,14 @@
 
 这些改动根据公开接口和对比结论独立编写，没有复制参考项目的实现代码或二进制文件。
 
+`1.1.0.0` 针对空 CRC/SHA 子菜单和顶层文件读取新增原生适配层。顶层不调用原 DLL；首次展开时创建原版命令树，展平嵌套分组，并在当前选择内复用命令列表。子命令持有后端模块，根命令释放后仍可调用；没有跨文件选择的永久缓存。
+
+参考的加载时机实现另见 Wings 的 [BaseCommand.h](https://github.com/Wings-Fantasy/7-Zip_Context_menu_plugin/blob/1a9967e28f1b11cdcbe75a2f7b76aa553cde12ce/src/command/BaseCommand.h) 和 Ron 的 [SevenZipRootCommand.cs](https://github.com/2xRon/7zipExplorerExtension/blob/e66805c04e191c2d0a1ec05aa6c884460d8f3929/src/7ZipMenu/SevenZipRootCommand.cs)。本项目没有把 `fOkToBeSlow=false` 当成隐藏菜单的依据，快路径仍返回正常状态。
+
 ## 保留的边界
 
-稀疏包给本地程序提供身份，原版 7-Zip DLL 仍在用户的安装目录中。它不能获得“把扩展 DLL 放进签名包后保护整个扩展负载”的效果。这个取舍适合本项目复用既有安装的目标，不应与包含自有 DLL 的 MSIX 混为一谈。[微软稀疏包说明](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/grant-identity-to-nonpackaged-apps)
+旧版使用稀疏包。新版使用包含自有 DLL 与激活入口的普通 MSIX，使 COM 路径指向包内适配层；后端 7-Zip 仍位于独立安装目录，不受本包签名覆盖。稀疏包的路径按外部位置解析，因此不能只把新 DLL 塞进旧包而继续使用原来的 ExternalLocation。[微软稀疏包指南](https://github.com/microsoft/winappCli/blob/main/docs/guides/sparse.md)
 
-微软明确规定 Explorer 不支持子命令继续嵌套。复用原 DLL 无法仅靠改清单展平 CRC SHA 等多层菜单，因此保留经典菜单入口；自建菜单扩展才有重新组织命令的空间。[IExplorerCommand::EnumSubCommands](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-iexplorercommand-enumsubcommands)
+微软明确规定 Explorer 不支持子命令继续嵌套。新版适配层把这些分组展平成单层命令；这解决菜单结构问题，实际资源管理器呈现仍须在完成签名和安装后验证。[IExplorerCommand::EnumSubCommands](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-iexplorercommand-enumsubcommands)
 
 接口探测、单元测试、构建签名和用户界面验证是不同证据；具体已验证范围见 [README](../README.md#验证记录)。

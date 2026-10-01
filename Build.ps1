@@ -3,7 +3,9 @@
 param(
     [string]$SevenZipPath,
     [string]$SdkBinPath,
-    [string]$OutputDirectory
+    [string]$OutputDirectory,
+    [string]$VcToolsPath,
+    [string]$SdkIncludePath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,13 +44,17 @@ if ((Test-Path -LiteralPath $OutputDirectory) -and @(Get-ChildItem -LiteralPath 
 $payload = Join-Path $OutputDirectory 'payload'
 New-Item -ItemType Directory -Path (Join-Path $payload 'Assets') -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'package\AppxManifest.xml') -Destination $payload
+$nativeOutput = Join-Path $OutputDirectory 'native-build'
+& (Join-Path $PSScriptRoot 'native\Build-Native.ps1') -SevenZipPath $SevenZipPath -OutputDirectory $nativeOutput -VcToolsPath $VcToolsPath -SdkIncludePath $SdkIncludePath
+Copy-Item -LiteralPath (Join-Path $nativeOutput 'SevenZipMenu.dll') -Destination $payload
+Copy-Item -LiteralPath (Join-Path $nativeOutput 'SevenZipLauncher.exe') -Destination $payload
 Add-Type -AssemblyName System.Drawing
 $icon = [Drawing.Icon]::ExtractAssociatedIcon($sevenZipExe)
 $bitmap = $icon.ToBitmap()
 try { $bitmap.Save((Join-Path $payload 'Assets\Logo.png'), [Drawing.Imaging.ImageFormat]::Png) }
 finally { $bitmap.Dispose(); $icon.Dispose() }
 $packagePath = Join-Path $OutputDirectory 'SevenZipModernMenu.msix'
-& $makeAppx pack /o /d $payload /nv /p $packagePath
+& $makeAppx pack /o /d $payload /p $packagePath
 if ($LASTEXITCODE -ne 0) { throw 'MakeAppx failed.' }
 
 # Generate a distinct local signing key. Do not export or distribute the private key.
@@ -71,6 +77,10 @@ try {
     CertificateThumbprint = $thumbprint
     PackageSha256 = (Get-FileHash -LiteralPath $packagePath -Algorithm SHA256).Hash
     TestedSevenZipVersion = $compatibility.Version
+    SevenZipPath = $SevenZipPath
+    AdapterClassId = 'a51841e4-acd0-4a8b-b1ad-5488da4dbee6'
+    PackagedAdapter = $true
+    AdapterSha256 = (Get-FileHash -LiteralPath (Join-Path $payload 'SevenZipMenu.dll') -Algorithm SHA256).Hash
 } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDirectory 'PackageInfo.json') -Encoding utf8
 Write-Output "Built locally signed registration package in: $OutputDirectory"
 Write-Output 'No certificate was trusted and no menu was installed by this build.'

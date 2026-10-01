@@ -164,7 +164,12 @@ function Invoke-MenuRegistration {
         if ((Get-AuthenticodeSignature -LiteralPath $PackagePath).Status -ne 'Valid') {
             throw 'The package signature is not valid after trusting its local certificate.'
         }
-        Add-AppxPackage -Path $PackagePath -ExternalLocation $State.ExternalLocation -ErrorAction Stop
+        if ($State.PackagedAdapter) {
+            Add-AppxPackage -Path $PackagePath -ErrorAction Stop
+        } else {
+            # Compatibility with the earlier registration-only sparse package.
+            Add-AppxPackage -Path $PackagePath -ExternalLocation $State.ExternalLocation -ErrorAction Stop
+        }
         $installed = Get-AppxPackage -Name $State.PackageName -ErrorAction Stop
         if (-not $installed -or $installed.Status -ne 'Ok') { throw 'Package registration did not finish successfully.' }
         $State.PackageFullName = $installed.PackageFullName

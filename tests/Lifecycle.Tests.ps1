@@ -23,6 +23,7 @@ Describe 'Registration recovery and certificate ownership' {
             CertificateThumbprint = ('A' * 40)
             CertificateAdded = $true
             Phase = 'Installing'
+            PackagedAdapter = $false
         }
         Mock Get-AppxPackage {
             if ($AllUsers) { return $script:otherUsers }
@@ -76,6 +77,13 @@ Describe 'Registration recovery and certificate ownership' {
         $script:registered | Should BeNullOrEmpty
         $script:trusted | Should Be $false
         (Test-Path -LiteralPath $script:statePath) | Should Be $false
+    }
+
+    It 'registers a packaged adapter without redirecting its files to the external 7-Zip directory' {
+        $script:state.PackagedAdapter = $true
+        Invoke-MenuRegistration $script:state $script:statePath 'package.msix' 'public.cer'
+        Assert-MockCalled Add-AppxPackage -Times 1 -Exactly -Scope It -ParameterFilter { -not $ExternalLocation }
+        $script:state.Phase | Should Be 'Installed'
     }
 
     It 'rolls back a partially successful Add-AppxPackage' {
