@@ -23,24 +23,25 @@ static class MenuRegression {
     [STAThread] static int Main(string[] args) {
         try {
             Console.OutputEncoding=new UTF8Encoding(false);
-            if(args.Length<3) throw new ArgumentException("Usage: MenuRegression.exe adapter.dll original.dll fixture-path [--original-only | --report | --invoke exact-title]");
+            if(args.Length<3) throw new ArgumentException("Usage: MenuRegression.exe adapter.dll|@registered original.dll fixture-path [--original-only | --report | --invoke exact-title]");
             string[] paths=args[2].Split('|');
             bool originalOnly=args.Length>3 && args[3]=="--original-only";
             bool reportOnly=args.Length>3 && args[3]=="--report";
             string invoke=args.Length>4 && args[3]=="--invoke" ? args[4] : null;
             var baseline=Probe.Run(Path.GetFullPath(args[1]),Original,paths,reportOnly?0:250);
-            var updated=originalOnly?baseline:Probe.Run(Path.GetFullPath(args[0]),Adapter,paths,reportOnly?0:250,!reportOnly,invoke);
+            var target=args[0]=="@registered" ? args[0] : Path.GetFullPath(args[0]);
+            var updated=originalOnly?baseline:Probe.Run(target,Adapter,paths,reportOnly?0:250,!reportOnly,invoke);
             var json=new JavaScriptSerializer();
             // ASCII JSON stays intact under either Windows console code page.
             Console.WriteLine(Regex.Replace(json.Serialize(new {Baseline=baseline,Updated=updated}), "[^\\u0000-\\u007F]",
                 m => "\\u" + ((int)m.Value[0]).ToString("x4")));
             if(reportOnly) return 0;
             Assert(updated.Entries.Count>0,"FAIL: empty submenu.");
-            Assert(updated.TopLevelItemRequests==0,"FAIL: top-level menu enumerates selected files.");
+            if(target!="@registered") Assert(updated.TopLevelItemRequests==0,"FAIL: top-level menu enumerates selected files.");
             Assert(updated.NestedSubmenuCount==0,"FAIL: nested submenus are invisible in the modern menu.");
             Assert(updated.DeferredStateCount==0,"FAIL: local file state query is deferred.");
             Assert(Flatten(baseline.Entries).SequenceEqual(Flatten(updated.Entries)),"FAIL: original actions were lost or reordered.");
-            Console.WriteLine("PASS: lazy top-level, flat complete command list, independent enum/clone, cache and child lifetime.");
+            Console.WriteLine(target=="@registered" ? "PASS: packaged activation, native shell selection, flat complete commands and child lifetime." : "PASS: lazy top-level, flat complete command list, independent enum/clone, cache and child lifetime.");
             return 0;
         } catch(Exception error) {Console.Error.WriteLine(error);return 1;}
     }

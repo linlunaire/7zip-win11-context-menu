@@ -58,6 +58,7 @@ public static class Probe {
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern IntPtr LoadLibraryEx(string path, IntPtr file, uint flags);
     [DllImport("kernel32.dll", CharSet=CharSet.Ansi, ExactSpelling=true)] static extern IntPtr GetProcAddress(IntPtr module, string name);
     [DllImport("kernel32.dll")] static extern bool FreeLibrary(IntPtr module);
+    [DllImport("ole32.dll")] static extern int CoCreateInstance(ref Guid clsid, IntPtr outer, uint context, ref Guid iid, out IntPtr command);
     [DllImport("shell32.dll", CharSet=CharSet.Unicode)] static extern int SHParseDisplayName(string path, IntPtr context, out IntPtr pidl, uint requested, out uint attributes);
     [DllImport("shell32.dll")] static extern int SHCreateShellItemArrayFromIDLists(uint count, [In] IntPtr[] pidls, out IntPtr items);
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int GetClassObject(ref Guid clsid, ref Guid iid, out IntPtr factory);
@@ -68,7 +69,7 @@ public static class Probe {
         var entries = new List<Entry>(); ICommands enumerator = null;
         int hr = command.EnumSubCommands(out enumerator);
         enumerationResult = HResult(hr);
-        Marshal.ThrowExceptionForHR(hr);
+        if(hr<0) throw new COMException("EnumSubCommands failed at depth "+depth+": "+HResult(hr),hr);
         if (enumerator == null) throw new InvalidOperationException("Missing command enumerator.");
         try {
             var batch = new ICommand[1]; uint fetched;
@@ -103,16 +104,23 @@ public static class Probe {
             for(int i=0;i<paths.Length;i++) { uint attrs; Marshal.ThrowExceptionForHR(SHParseDisplayName(paths[i],IntPtr.Zero,out ids[i],0,out attrs)); }
             Marshal.ThrowExceptionForHR(SHCreateShellItemArrayFromIDLists((uint)ids.Length,ids,out realItems));
             var measured = new MeasuredItems(realItems,itemDelayMs);
-            items=Marshal.GetComInterfaceForObject(measured,typeof(IMeasuredItems));
+            // The registered COM server receives a real Windows shell selection.
+            // The local ABI probe alone uses the measured managed wrapper for fault injection.
+            if(dll=="@registered") { items=realItems; Marshal.AddRef(items); }
+            else items=Marshal.GetComInterfaceForObject(measured,typeof(IMeasuredItems));
             var watch = Stopwatch.StartNew();
-            module = LoadLibraryEx(dll,IntPtr.Zero,0x1100);
-            if(module == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
-            var getFactory = (GetClassObject)Marshal.GetDelegateForFunctionPointer(GetProcAddress(module,"DllGetClassObject"),typeof(GetClassObject));
             Guid clsid = new Guid(classId), factoryIid = new Guid("00000001-0000-0000-C000-000000000046"), commandIid = new Guid("A08CE4D0-FA25-44AB-B57C-C7B1C323E0B9");
-            Marshal.ThrowExceptionForHR(getFactory(ref clsid,ref factoryIid,out factory));
-            var create = (CreateInstance)Marshal.GetDelegateForFunctionPointer(Marshal.ReadIntPtr(Marshal.ReadIntPtr(factory),3*IntPtr.Size),typeof(CreateInstance));
             IntPtr pointer;
-            Marshal.ThrowExceptionForHR(create(factory,IntPtr.Zero,ref commandIid,out pointer));
+            if(dll=="@registered") {
+                Marshal.ThrowExceptionForHR(CoCreateInstance(ref clsid,IntPtr.Zero,4,ref commandIid,out pointer));
+            } else {
+                module = LoadLibraryEx(dll,IntPtr.Zero,0x1100);
+                if(module == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+                var getFactory = (GetClassObject)Marshal.GetDelegateForFunctionPointer(GetProcAddress(module,"DllGetClassObject"),typeof(GetClassObject));
+                Marshal.ThrowExceptionForHR(getFactory(ref clsid,ref factoryIid,out factory));
+                var create = (CreateInstance)Marshal.GetDelegateForFunctionPointer(Marshal.ReadIntPtr(Marshal.ReadIntPtr(factory),3*IntPtr.Size),typeof(CreateInstance));
+                Marshal.ThrowExceptionForHR(create(factory,IntPtr.Zero,ref commandIid,out pointer));
+            }
             try { command = (ICommand)Marshal.GetObjectForIUnknown(pointer); } finally { Marshal.Release(pointer); }
             watch.Stop(); report.CreateMs=watch.Elapsed.TotalMilliseconds;
             IntPtr rootTitle;
@@ -126,7 +134,7 @@ public static class Probe {
             if(fast == unchecked((int)0x8000000A)) report.DeferredStateCount++;
             watch.Restart(); int slow=command.GetState(items,true,out state); watch.Stop();
             report.SlowResult=HResult(slow); report.SlowMs=watch.Elapsed.TotalMilliseconds;
-            report.TopLevelItemRequests=measured.ItemRequests;
+            report.TopLevelItemRequests=dll=="@registered" ? -1 : measured.ItemRequests;
             watch.Restart(); report.Entries=Enumerate(command,items,report,0,out report.EnumerationResult); watch.Stop();
             report.EnumerationMs=watch.Elapsed.TotalMilliseconds;
             if(checkLifetime) {

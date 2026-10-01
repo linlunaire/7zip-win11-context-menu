@@ -22,7 +22,7 @@
 - 构建需要 Visual Studio Build Tools 的 x64 C++ 工具链，以及 Windows SDK 的头文件、库、`makeappx.exe` 和 `signtool.exe`。
 - 安装、卸载需要**同一 Windows 账户**的管理员权限。
 
-测试环境：Windows 11 25H2（26200.9457）、7-Zip 25.01 x64。`1.1.0.0` 已通过接口与文件操作回归，签名、安装和资源管理器界面验证仍待完成；不能沿用旧版实装结果作为新版证明。
+测试环境：Windows 11 25H2（26200.9457）、7-Zip 25.01 x64。`1.1.0.0` 已完成签名、安装、卸载重装、普通账户包 COM 激活和真实文件操作验证；资源管理器界面观感与端到端延迟尚待人工确认。
 
 ## 检查和构建
 
@@ -92,6 +92,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install.ps1
 ```
 
 上述两步成功后，以同一账户的管理员身份运行 `Uninstall.ps1`，再运行 `Install.ps1 -PackageDirectory './dist/1.1.0'`。签名或测试失败时保留原安装；不要用未签名的中间包替换它。
+
+安装后，在普通账户窗口运行 `./tests/Test-NativeMenu.ps1 -Packaged` 可验证实际注册包的完整命令树；该模式使用原生 Shell 文件选择对象，不向跨进程调用注入托管测试替身。
 
 以安装时同一账户的管理员身份运行：
 

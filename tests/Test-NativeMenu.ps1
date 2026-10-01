@@ -1,10 +1,11 @@
 #requires -Version 5.1
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][string]$AdapterDll,
+    [string]$AdapterDll,
     [string]$SevenZipPath = 'C:\Program Files\7-Zip',
     [string]$OutputDirectory,
-    [switch]$OriginalOnly
+    [switch]$OriginalOnly,
+    [switch]$Packaged
 )
 $ErrorActionPreference='Stop'
 if (-not $OutputDirectory) { $OutputDirectory=Join-Path (Split-Path $PSScriptRoot -Parent) '.build\native-tests' }
@@ -17,7 +18,8 @@ $runner=Join-Path $OutputDirectory 'MenuRegression.exe'
 if ($LASTEXITCODE -ne 0) { throw 'Probe compilation failed.' }
 $fixture=Join-Path $OutputDirectory 'local file.txt'
 'CRC SHA regression fixture' | Set-Content -LiteralPath $fixture -Encoding utf8
-$arguments=@((Resolve-Path -LiteralPath $AdapterDll).Path,(Join-Path $SevenZipPath '7-zip.dll'),$fixture)
+$target=if ($Packaged) { '@registered' } else { (Resolve-Path -LiteralPath $AdapterDll).Path }
+$arguments=@($target,(Join-Path $SevenZipPath '7-zip.dll'),$fixture)
 if ($OriginalOnly) { $arguments+='--original-only' }
 & $runner @arguments
 if ($LASTEXITCODE -ne 0) { throw 'Native menu regression failed.' }
